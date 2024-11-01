@@ -2,6 +2,8 @@ set(EXE_NAME main)
 
 add_executable(${EXE_NAME}
   main.cpp
+  vcm/VulkanComputeManager.hpp
+  vcm/VulkanComputeManager.cpp
 )
 
 set_target_properties(${EXE_NAME} PROPERTIES
