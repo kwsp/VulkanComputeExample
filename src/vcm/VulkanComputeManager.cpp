@@ -1,5 +1,6 @@
 #include "VulkanComputeManager.hpp"
 #include "Common.hpp"
+#include "VmaUsage.hpp"
 #include <array>
 #include <fmt/format.h>
 #include <fstream>
@@ -7,7 +8,6 @@
 #include <map>
 #include <stdexcept>
 #include <vector>
-#include <vulkan/vulkan.h>
 #include <vulkan/vulkan.hpp>
 
 // NOLINTBEGIN(*-reinterpret-cast)
@@ -26,6 +26,9 @@ VulkanComputeManager::VulkanComputeManager() {
   // Step 3: create logical device
   createLogicalDevice();
 
+  // Step 4: create VMA
+  createVmaAllocator();
+
   createCommandPool();
 
   createCommandBuffer();
@@ -43,6 +46,13 @@ VulkanComputeManager::VulkanComputeManager() {
                  supportedAsStorageImage);
   }
 }
+
+VulkanComputeManager::~VulkanComputeManager() {
+  vmaDestroyAllocator(m_allocator);
+  device.destroyCommandPool(commandPool);
+  device.destroy();
+  instance.destroy();
+};
 
 void VulkanComputeManager::createCommandPool() {
   QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
@@ -70,12 +80,12 @@ void VulkanComputeManager::createCommandPool() {
   // Command buffers are executed by submitting them on one of the device queues
   // Each command pool can only allocate command buffers that are submitted on a
   // single type of queue.
-  commandPool = device->createCommandPoolUnique(poolInfo);
+  commandPool = device.createCommandPool(poolInfo);
 }
 
 void VulkanComputeManager::createCommandBuffer() {
   vk::CommandBufferAllocateInfo allocInfo{};
-  allocInfo.commandPool = *commandPool;
+  allocInfo.commandPool = commandPool;
   // VK_COMMAND_BUFFER_LEVEL_PRIMARY: can be submitted to a queue for execution,
   // but cannot be called from other command buffers.
   // VK_COMMAND_BUFFER_LEVEL_SECONDARY: cannot be submitted directly, but can be
@@ -83,7 +93,7 @@ void VulkanComputeManager::createCommandBuffer() {
   allocInfo.level = vk::CommandBufferLevel::ePrimary;
   allocInfo.commandBufferCount = 1;
 
-  commandBuffer = device->allocateCommandBuffers(allocInfo)[0];
+  commandBuffer = device.allocateCommandBuffers(allocInfo)[0];
 }
 
 void VulkanComputeManager::createDescriptorPool() {
@@ -101,7 +111,7 @@ void VulkanComputeManager::createDescriptorPool() {
   poolInfo.pPoolSizes = poolSize.data();
   poolInfo.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
 
-  descriptorPool = device->createDescriptorPool(poolInfo);
+  descriptorPool = device.createDescriptorPool(poolInfo);
 }
 
 VulkanBuffer
@@ -114,21 +124,21 @@ VulkanComputeManager::createBuffer(vk::DeviceSize size,
   bufferInfo.usage = usage;
   bufferInfo.sharingMode = vk::SharingMode::eExclusive;
 
-  auto buffer = device->createBufferUnique(bufferInfo);
+  auto buffer = device.createBufferUnique(bufferInfo);
 
   // To allocate memory for a buffer we need to first query its memory
   // requirements using vkGetBufferMemoryRequirements
   vk::MemoryRequirements memRequirements =
-      device->getBufferMemoryRequirements(*buffer);
+      device.getBufferMemoryRequirements(*buffer);
 
   vk::MemoryAllocateInfo allocInfo{};
   allocInfo.allocationSize = memRequirements.size;
   allocInfo.memoryTypeIndex =
       findMemoryType(memRequirements.memoryTypeBits, properties);
 
-  auto bufferMemory = device->allocateMemoryUnique(allocInfo);
+  auto bufferMemory = device.allocateMemoryUnique(allocInfo);
 
-  device->bindBufferMemory(*buffer, *bufferMemory, 0);
+  device.bindBufferMemory(*buffer, *bufferMemory, 0);
   return {std::move(buffer), std::move(bufferMemory)};
 }
 
@@ -149,19 +159,19 @@ VulkanComputeManager::createImage2D(uint32_t width, uint32_t height,
   imageInfo.usage = usage;
   imageInfo.sharingMode = vk::SharingMode::eExclusive;
   imageInfo.samples = vk::SampleCountFlagBits::e1;
-  auto image = device->createImageUnique(imageInfo);
+  auto image = device.createImageUnique(imageInfo);
 
   // Allocate and bind memory for the image
   vk::MemoryRequirements imageMemRequirements =
-      device->getImageMemoryRequirements(image.get());
+      device.getImageMemoryRequirements(image.get());
   vk::MemoryAllocateInfo imageAllocInfo{};
   imageAllocInfo.allocationSize = imageMemRequirements.size;
   imageAllocInfo.memoryTypeIndex =
       findMemoryType(imageMemRequirements.memoryTypeBits,
                      vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-  auto imageMemory = device->allocateMemoryUnique(imageAllocInfo);
-  device->bindImageMemory(image.get(), imageMemory.get(), 0);
+  auto imageMemory = device.allocateMemoryUnique(imageAllocInfo);
+  device.bindImageMemory(image.get(), imageMemory.get(), 0);
   return {std::move(image), std::move(imageMemory)};
 }
 
@@ -201,11 +211,10 @@ void VulkanComputeManager::copyBuffers(
 
   vk::CommandBufferAllocateInfo allocInfo{};
   allocInfo.level = vk::CommandBufferLevel::ePrimary;
-  allocInfo.commandPool = *commandPool;
+  allocInfo.commandPool = commandPool;
   allocInfo.commandBufferCount = 1;
 
-  vk::CommandBuffer commandBuffer =
-      device->allocateCommandBuffers(allocInfo)[0];
+  vk::CommandBuffer commandBuffer = device.allocateCommandBuffers(allocInfo)[0];
 
   // Immediately start recording the command buffer
   vk::CommandBufferBeginInfo beginInfo{};
@@ -298,7 +307,7 @@ void VulkanComputeManager::createInstance() {
       static_cast<uint32_t>(instanceExtensions.size());
   createInfo.ppEnabledExtensionNames = instanceExtensions.data();
 
-  instance = vk::createInstanceUnique(createInfo);
+  instance = vk::createInstance(createInfo);
   fmt::println("Created Vulkan instance.");
 }
 
@@ -348,8 +357,7 @@ void VulkanComputeManager::pickPhysicalDevice() {
   physicalDevice = VK_NULL_HANDLE;
   physicalDeviceName = {};
 
-  std::vector<vk::PhysicalDevice> devices =
-      instance->enumeratePhysicalDevices();
+  std::vector<vk::PhysicalDevice> devices = instance.enumeratePhysicalDevices();
 
   if (devices.empty()) {
     throw std::runtime_error("Failed to find GPUs with Vulkan support");
@@ -430,10 +438,20 @@ void VulkanComputeManager::createLogicalDevice() {
       static_cast<uint32_t>(deviceExtensions.size());
   createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
-  device = physicalDevice.createDeviceUnique(createInfo);
-  queue = device->getQueue(indices.computeFamily.value(), 0);
+  device = physicalDevice.createDevice(createInfo);
+  queue = device.getQueue(indices.computeFamily.value(), 0);
 
   fmt::println("Created Vulkan logical device and compute queue.");
+}
+
+void VulkanComputeManager::createVmaAllocator() {
+  VmaAllocatorCreateInfo info{};
+  info.physicalDevice = physicalDevice;
+  info.device = device;
+  info.instance = instance;
+  info.vulkanApiVersion = VK_API_VERSION_1_2;
+
+  vmaCreateAllocator(&info, &m_allocator);
 }
 
 auto readFile(const fs::path &filename) {
@@ -457,7 +475,7 @@ vk::UniqueShaderModule VulkanComputeManager::createShaderModule(
   createInfo.codeSize = shaderCode.size();
   createInfo.pCode = reinterpret_cast<const uint32_t *>(shaderCode.data());
 
-  return device->createShaderModuleUnique(createInfo);
+  return device.createShaderModuleUnique(createInfo);
 }
 
 vk::UniqueShaderModule

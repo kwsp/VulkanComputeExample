@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.hpp"
+#include "VmaUsage.hpp"
 #include <filesystem>
 #include <fmt/format.h>
 #include <optional>
@@ -20,7 +21,7 @@ public:
   VulkanComputeManager &operator=(const VulkanComputeManager &) = delete;
   VulkanComputeManager &operator=(VulkanComputeManager &&) = delete;
 
-  ~VulkanComputeManager() = default;
+  ~VulkanComputeManager();
 
   static void printInstanceExtensionSupport();
 
@@ -89,11 +90,11 @@ public:
                            vk::DeviceMemory memory) const {
     vk::DeviceSize size = data.size() * sizeof(T);
     // Step 1: Map the memory associated with the staging buffer
-    void *mappedMemory = device->mapMemory(memory, 0, size);
+    void *mappedMemory = device.mapMemory(memory, 0, size);
     // Step 2: Copy data from the vector to the mapped memory
     memcpy(mappedMemory, data.data(), static_cast<size_t>(size));
     // Step 3: Unmap the memory so the GPU can access it
-    device->unmapMemory(memory);
+    device.unmapMemory(memory);
   }
   template <typename T>
   void copyToStagingBuffer(std::span<const T> data,
@@ -109,11 +110,11 @@ public:
   template <typename T>
   void copyFromStagingBuffer(vk::DeviceMemory memory, std::span<T> data) const {
     vk::DeviceSize size = data.size() * sizeof(T);
-    void *mappedMemory = device->mapMemory(memory, 0, size);
+    void *mappedMemory = device.mapMemory(memory, 0, size);
     // Copy the data from GPU memory to a local buffer
     memcpy(data.data(), mappedMemory, static_cast<size_t>(size));
     // Unmap the memory after retrieving the data
-    device->unmapMemory(memory);
+    device.unmapMemory(memory);
   }
   template <typename T>
   void copyFromStagingBuffer(const VulkanBuffer &stagingBuffer,
@@ -128,22 +129,26 @@ public:
 
 private:
   // QVulkanInstance vulkanInstance;
-  vk::UniqueInstance instance;
+  vk::Instance instance;
 
   // Physical device
   vk::PhysicalDevice physicalDevice;
   std::string physicalDeviceName;
 
   // Logical device
-  vk::UniqueDevice device;
+  vk::Device device;
+
   // Compute queue
   vk::Queue queue;
+
+  // Vulkan memory allocator
+  VmaAllocator m_allocator;
 
   // Command pool
   // Manage the memory that is used to store the buffers and command buffers are
   // allocated from them
   // Command pool should be thread local
-  vk::UniqueCommandPool commandPool;
+  vk::CommandPool commandPool;
 
   // Command buffer
   vk::CommandBuffer commandBuffer;
@@ -179,6 +184,9 @@ private:
   /* Create logical device */
   void createLogicalDevice();
 
+  /* Create VmaAllocator */
+  void createVmaAllocator();
+
   /* Create command pool */
   void createCommandPool();
 
@@ -188,10 +196,10 @@ private:
   [[nodiscard]] vk::CommandBuffer beginTempOneTimeCommandBuffer() const {
     vk::CommandBufferAllocateInfo allocInfo{};
     allocInfo.level = vk::CommandBufferLevel::ePrimary;
-    allocInfo.commandPool = *commandPool;
+    allocInfo.commandPool = commandPool;
     allocInfo.commandBufferCount = 1;
 
-    auto commandBuffer = device->allocateCommandBuffers(allocInfo)[0];
+    auto commandBuffer = device.allocateCommandBuffers(allocInfo)[0];
 
     // Immediately start recording the command buffer
     vk::CommandBufferBeginInfo beginInfo{};

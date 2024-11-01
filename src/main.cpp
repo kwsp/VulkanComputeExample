@@ -16,14 +16,14 @@ int main(int argc, char *argv[]) {
                                        vk::BufferUsageFlagBits::eStorageBuffer,
                                        vk::SharingMode::eExclusive};
 
-    auto inBuffer = manager.get_device()->createBuffer(bufCreateInfo);
-    auto outBuffer = manager.get_device()->createBuffer(bufCreateInfo);
+    auto inBuffer = manager.get_device().createBuffer(bufCreateInfo);
+    auto outBuffer = manager.get_device().createBuffer(bufCreateInfo);
 
     // Allocating memory
     auto inBufferMemRequirements =
-        manager.get_device()->getBufferMemoryRequirements(inBuffer);
+        manager.get_device().getBufferMemoryRequirements(inBuffer);
     auto outBufferMemRequirements =
-        manager.get_device()->getBufferMemoryRequirements(outBuffer);
+        manager.get_device().getBufferMemoryRequirements(outBuffer);
   }
 
   return 0;
