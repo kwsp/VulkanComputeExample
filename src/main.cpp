@@ -1,15 +1,30 @@
 #include <fmt/core.h>
 #include <iostream>
+#include <map>
+#include <string>
 #include <vulkan/vulkan.hpp>
 
 struct VulkanComputeApp {
   vk::Instance instance;
+  vk::PhysicalDevice physicalDevice;
+  std::string physicalDeviceName;
 
   VulkanComputeApp() {
     // Step 1: create Vulkan instance
     createInstance();
+    pickPhysicalDevice();
   }
 
+  VulkanComputeApp(vk::Instance instance, vk::PhysicalDevice physicalDevice,
+                   std::string physicalDeviceName)
+      : instance(instance), physicalDevice(physicalDevice),
+        physicalDeviceName(std::move(physicalDeviceName)) {}
+
+  // Delete copy/move constructor/assignment
+  VulkanComputeApp(const VulkanComputeApp &) = delete;
+  VulkanComputeApp(VulkanComputeApp &&) = delete;
+  VulkanComputeApp &operator=(const VulkanComputeApp &) = delete;
+  const VulkanComputeApp &operator=(VulkanComputeApp &&) = delete;
   ~VulkanComputeApp() { instance.destroy(); }
 
   // Step 1: create Vulkan instance
@@ -43,8 +58,28 @@ struct VulkanComputeApp {
     vk::InstanceCreateInfo InstanceCreateInfo(
         vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR, &AppInfo, layers,
         extensionsUsed);
+    std::cout << "\n";
 
     instance = vk::createInstance(InstanceCreateInfo);
+  }
+
+  // Step 2: pick Vulkan physical device
+  void pickPhysicalDevice() {
+    std::vector<vk::PhysicalDevice> devices =
+        instance.enumeratePhysicalDevices();
+
+    if (devices.empty()) {
+      throw std::runtime_error("Failed to find GPUs with Vulkan support");
+    }
+
+    physicalDevice = devices.front();
+
+    {
+      const auto props = physicalDevice.getProperties();
+      physicalDeviceName = {props.deviceName.data(), props.deviceName.size()};
+    }
+
+    fmt::println("Picked physical device '{}'.", physicalDeviceName);
   }
 };
 
