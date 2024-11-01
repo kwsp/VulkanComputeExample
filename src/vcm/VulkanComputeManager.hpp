@@ -28,6 +28,7 @@ public:
   [[nodiscard]] auto &get_instance() const { return instance; }
   [[nodiscard]] auto &get_physicalDevice() const { return physicalDevice; }
   [[nodiscard]] auto &get_device() const { return device; }
+  [[nodiscard]] auto &get_allocator() const { return m_allocator; }
 
   // Create buffer helpers
   [[nodiscard]] VulkanBuffer
@@ -266,5 +267,25 @@ inline void memoryBarrierComputeThenTransfer(vk::CommandBuffer &commandBuffer) {
       vk::PipelineStageFlagBits::eTransfer,      // dst: before next transfer
       {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
 }
+
+/*
+Vma allocation buffer
+*/
+struct VcmBuffer {
+  VkBuffer buffer{};
+  VmaAllocation allocation{};
+
+  VcmBuffer(VmaAllocator allocator, const vk::BufferCreateInfo &createInfo,
+            const VmaAllocationCreateInfo &allocInfo) {
+
+    // Creating the buffers
+    vmaCreateBuffer(allocator, vcm::toVk(&createInfo), &allocInfo, &buffer,
+                    &allocation, nullptr);
+  }
+
+  void destroy(VmaAllocator allocator) {
+    vmaDestroyBuffer(allocator, buffer, allocation);
+  }
+};
 
 } // namespace vcm

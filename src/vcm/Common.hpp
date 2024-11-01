@@ -1,5 +1,6 @@
 #pragma once
 
+#include "VmaUsage.hpp"
 #include <filesystem>
 #include <fmt/format.h>
 #include <vulkan/vulkan.hpp>
@@ -26,5 +27,13 @@ struct VulkanImage {
   vk::UniqueImage image;
   vk::UniqueDeviceMemory memory;
 };
+
+/*
+Helpers for vk-hpp to vk
+*/
+
+inline auto toVk(const vk::BufferCreateInfo *createInfo) {
+  return reinterpret_cast<VkBufferCreateInfo const *>(createInfo);
+}
 
 } // namespace vcm

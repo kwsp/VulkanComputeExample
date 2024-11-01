@@ -1,4 +1,5 @@
 #include "vcm/VulkanComputeManager.hpp"
+#include "vulkan/vulkan_core.h"
 #include <fmt/core.h>
 #include <vulkan/vulkan.hpp>
 
@@ -15,15 +16,14 @@ int main(int argc, char *argv[]) {
     vk::BufferCreateInfo bufCreateInfo{vk::BufferCreateFlags(), bufferSize,
                                        vk::BufferUsageFlagBits::eStorageBuffer,
                                        vk::SharingMode::eExclusive};
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
 
-    auto inBuffer = manager.get_device().createBuffer(bufCreateInfo);
-    auto outBuffer = manager.get_device().createBuffer(bufCreateInfo);
+    vcm::VcmBuffer inBuffer(manager.get_allocator(), bufCreateInfo, allocInfo);
+    vcm::VcmBuffer outBuffer(manager.get_allocator(), bufCreateInfo, allocInfo);
 
-    // Allocating memory
-    auto inBufferMemRequirements =
-        manager.get_device().getBufferMemoryRequirements(inBuffer);
-    auto outBufferMemRequirements =
-        manager.get_device().getBufferMemoryRequirements(outBuffer);
+    inBuffer.destroy(manager.get_allocator());
+    outBuffer.destroy(manager.get_allocator());
   }
 
   return 0;
