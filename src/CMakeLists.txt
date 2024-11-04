@@ -38,49 +38,57 @@ if (NOT DEFINED ENV{VULKAN_SDK})
 endif()
 
 
-function(vcm_add_hlsl_shader TARGET SHADER_SOURCE_FILE)
-  # message(STATUS "vcm_add_hlsl_shader called with ${SHADER_SOURCE_FILE}")
-  set(SHADER_SOURCE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_SOURCE_FILE}")
+function(vcm_add_hlsl_shaders TARGET)
+    # Create shader binary directory
+    set(SHADER_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+    file(MAKE_DIRECTORY "${SHADER_BINARY_DIR}")
 
-  # Create shader binary dir
-  set(SHADER_BINARY_DIR  "${CMAKE_CURRENT_BINARY_DIR}/shaders")
-  file(MAKE_DIRECTORY "${SHADER_BINARY_DIR}")
+    # Add a post-build command to copy "BINARY_DIR/shaders" to "BINARY_DIR/CONFIG/shaders"
+    add_custom_command(
+        OUTPUT "${SHADER_BINARY_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${SHADER_BINARY_DIR}"
+            "$<TARGET_FILE_DIR:${TARGET}>/shaders"
+        COMMENT "Copying shader objects to binary config dir"
+    )
+    add_custom_target(vcm_copy_shaders_target DEPENDS ${SHADER_BINARY_DIR})
+    add_dependencies(${TARGET} vcm_copy_shaders_target)
 
-  # Add a post build command to copy "BINARY_DIR/shaders" to "BINARY_DIR/CONFIG/shaders"
-  add_custom_command(
-    OUTPUT "${SHADER_BINARY_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${SHADER_BINARY_DIR}"
-        "$<TARGET_FILE_DIR:${TARGET}>/shaders"
-    COMMENT "Copying shader objects to binary config dir"
-  )
-  add_custom_target(copy_shaders_target DEPENDS ${SHADER_BINARY_DIR})
-  add_dependencies(${TARGET} copy_shaders_target)
+    message(STATUS "ARGN: ${ARGN}")
 
-  # Shader binary path
-  cmake_path(GET SHADER_SOURCE_FILE STEM SHADER_STEM)
-  set(SHADER_OUTPUT_FILE "${SHADER_BINARY_DIR}/${SHADER_STEM}.spv")
+    # Iterate over each shader file and process it
+    foreach(SHADER_SOURCE_FILE ${ARGN})
+        set(SHADER_SOURCE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_SOURCE_FILE}")
 
-  message(STATUS "SHADER_SOURCE_FILE: ${SHADER_SOURCE_FILE}")
-  message(STATUS "SHADER_OUTPUT_FILE: ${SHADER_OUTPUT_FILE}")
+        # Get the base name of the shader file
+        cmake_path(GET SHADER_SOURCE_FILE STEM SHADER_STEM)
+        set(SHADER_OUTPUT_FILE "${SHADER_BINARY_DIR}/${SHADER_STEM}.spv")
 
-  # Compile hlsl -> spv
-  add_custom_command(
-      OUTPUT "${SHADER_OUTPUT_FILE}"
-      COMMAND $ENV{VULKAN_SDK}/bin/dxc -T cs_6_0 -E "Main" -spirv -fvk-use-dx-layout -fspv-target-env=vulkan1.1 -Fo "${SHADER_OUTPUT_FILE}" "${SHADER_SOURCE_FILE}"
-      DEPENDS "${SHADER_SOURCE_FILE}"
-      WORKING_DIRECTORY ${SHADER_BINARY_DIR}
-      COMMENT "Buiding Shader ${SHADER_SOURCE_FILE}"
-  )
+        message(STATUS "SHADER_SOURCE_FILE: ${SHADER_SOURCE_FILE}")
+        message(STATUS "SHADER_OUTPUT_FILE: ${SHADER_OUTPUT_FILE}")
 
-  # Add the shader target as a dependency to the main target
-  set(SHADER_TARGET_NAME ${SHADER_STEM})
-  add_custom_target(${SHADER_TARGET_NAME} DEPENDS ${SHADER_OUTPUT_FILE})
-  add_dependencies(copy_shaders_target ${SHADER_TARGET_NAME})
+        # Compile HLSL -> SPIR-V
+        add_custom_command(
+            OUTPUT "${SHADER_OUTPUT_FILE}"
+            COMMAND $ENV{VULKAN_SDK}/bin/dxc -T cs_6_0 -E "Main" -spirv -fvk-use-dx-layout -fspv-target-env=vulkan1.1 -Fo "${SHADER_OUTPUT_FILE}" "${SHADER_SOURCE_FILE}"
+            DEPENDS "${SHADER_SOURCE_FILE}"
+            WORKING_DIRECTORY ${SHADER_BINARY_DIR}
+            COMMENT "Building Shader ${SHADER_SOURCE_FILE}"
+        )
 
+        # Add the shader target as a dependency to the main target
+        set(SHADER_TARGET_NAME "vcm_shader_${SHADER_STEM}")
+        add_custom_target(${SHADER_TARGET_NAME} DEPENDS ${SHADER_OUTPUT_FILE})
+        message(STATUS "added custom target ${SHADER_TARGET_NAME}")
+        add_dependencies(vcm_copy_shaders_target ${SHADER_TARGET_NAME})
+    endforeach()
 endfunction()
 
-vcm_add_hlsl_shader(${EXE_NAME} shaders/square.hlsl)
+
+vcm_add_hlsl_shaders(${EXE_NAME} 
+  shaders/square.hlsl
+  shaders/add.hlsl
+)
 
 
 target_link_libraries(${EXE_NAME} PRIVATE
