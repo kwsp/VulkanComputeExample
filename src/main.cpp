@@ -153,6 +153,14 @@ int main(int argc, char *argv[]) {
     /*
     Cleanup
     */
+    auto device = manager.get_device();
+    device.destroyFence(fence);
+    device.destroyDescriptorSetLayout(descriptorSetLayout);
+    device.destroyPipelineLayout(pipelineLayout);
+    device.destroyPipelineCache(pipelineCache);
+    device.destroyShaderModule(shader);
+    device.destroyPipeline(computePipeline);
+
     inBuffer.destroy(manager.get_allocator());
     outBuffer.destroy(manager.get_allocator());
   }
