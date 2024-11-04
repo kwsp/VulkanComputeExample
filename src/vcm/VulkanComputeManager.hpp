@@ -24,7 +24,12 @@ public:
   [[nodiscard]] auto &get_instance() const { return instance; }
   [[nodiscard]] auto &get_physicalDevice() const { return physicalDevice; }
   [[nodiscard]] auto &get_device() const { return device; }
+  [[nodiscard]] auto &get_queue() const { return queue; }
+
   [[nodiscard]] auto &get_allocator() const { return m_allocator; }
+
+  [[nodiscard]] auto &get_descriptorPool() const { return descriptorPool; }
+  [[nodiscard]] auto &get_commandPool() const { return commandPool; }
 
   // If commandBuffer is provided, use it and only record
   // else allocate a temporary command buffer
