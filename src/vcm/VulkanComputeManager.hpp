@@ -1,12 +1,9 @@
 #pragma once
 
-#include "Common.hpp"
 #include "VmaUsage.hpp"
-#include <filesystem>
 #include <fmt/format.h>
 #include <optional>
 #include <string>
-#include <vector>
 #include <vulkan/vulkan.hpp>
 
 namespace vcm {
@@ -134,12 +131,6 @@ private:
   [[nodiscard]] uint32_t
   findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 
-  /* Load shaders */
-  [[nodiscard]] vk::UniqueShaderModule
-  loadShader(const fs::path &filename) const;
-  [[nodiscard]] vk::UniqueShaderModule
-  createShaderModule(const std::vector<char> &computeShaderCode) const;
-
   /* Cleanup */
   void cleanup();
 };
@@ -174,25 +165,5 @@ inline void memoryBarrierComputeThenTransfer(vk::CommandBuffer &commandBuffer) {
       vk::PipelineStageFlagBits::eTransfer,      // dst: before next transfer
       {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
 }
-
-/*
-Vma allocation buffer
-*/
-struct VcmBuffer {
-  VkBuffer buffer{};
-  VmaAllocation allocation{};
-
-  VcmBuffer(VmaAllocator allocator, const vk::BufferCreateInfo &createInfo,
-            const VmaAllocationCreateInfo &allocInfo) {
-
-    // Creating the buffers
-    vmaCreateBuffer(allocator, vcm::toVk(&createInfo), &allocInfo, &buffer,
-                    &allocation, nullptr);
-  }
-
-  void destroy(VmaAllocator allocator) {
-    vmaDestroyBuffer(allocator, buffer, allocation);
-  }
-};
 
 } // namespace vcm

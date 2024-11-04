@@ -369,42 +369,6 @@ auto readFile(const fs::path &filename) {
   return buffer;
 }
 
-vk::UniqueShaderModule VulkanComputeManager::createShaderModule(
-    const std::vector<char> &shaderCode) const {
-  vk::ShaderModuleCreateInfo createInfo{};
-  createInfo.codeSize = shaderCode.size();
-  createInfo.pCode = reinterpret_cast<const uint32_t *>(shaderCode.data());
-
-  return device.createShaderModuleUnique(createInfo);
-}
-
-vk::UniqueShaderModule
-VulkanComputeManager::loadShader(const fs::path &filename) const {
-  auto computeShaderModule = createShaderModule(readFile(filename));
-  fmt::print("Successfully loaded shader {}.\n", filename.string());
-  return computeShaderModule;
-
-  /*
-  To execute a compute shader we need to:
-
-  1. Create a descriptor set that has two VkDescriptorBufferInfo’s for each of
-our buffers (one for each binding in the compute shader).
-  2. Update the descriptor set to set the bindings of both of the VkBuffer’s
-we created earlier.
-  3. Create a command pool with our queue family index.
-  4. Allocate a command buffer from the command pool (we’re using
-VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT as we aren’t resubmitting the
-buffer in our sample).
-  5. Begin the command buffer.
-  6. Bind our compute pipeline.
-  7. Bind our descriptor set at the VK_PIPELINE_BIND_POINT_COMPUTE.
-  8. Dispatch a compute shader for each element of our buffer.
-  9. End the command buffer.
-  10. And submit it to the queue!
-
-  */
-}
-
 void VulkanComputeManager::printInstanceExtensionSupport() {
   const auto extensions = vk::enumerateInstanceExtensionProperties();
 

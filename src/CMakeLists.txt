@@ -16,9 +16,15 @@ find_package(fmt CONFIG REQUIRED)
 
 add_executable(${EXE_NAME}
   main.cpp
+
   vcm/VulkanComputeManager.hpp
   vcm/VulkanComputeManager.cpp
+  vcm/VmaUsage.hpp
   vcm/VmaUsage.cpp
+  vcm/Buffer.hpp
+  vcm/Common.hpp
+  vcm/Shader.hpp
+  vcm/Shader.cpp
 )
 
 set_target_properties(${EXE_NAME} PROPERTIES
