@@ -5,7 +5,6 @@
 #include <filesystem>
 #include <fmt/format.h>
 #include <optional>
-#include <span>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -30,103 +29,11 @@ public:
   [[nodiscard]] auto &get_device() const { return device; }
   [[nodiscard]] auto &get_allocator() const { return m_allocator; }
 
-  // Create buffer helpers
-  [[nodiscard]] VulkanBuffer
-  createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
-               vk::MemoryPropertyFlags properties) const;
-
-  [[nodiscard]] VulkanBuffer createStagingBufferSrc(vk::DeviceSize size) const {
-    return createBuffer(size, vk::BufferUsageFlagBits::eTransferSrc,
-                        vk::MemoryPropertyFlagBits::eHostVisible |
-                            vk::MemoryPropertyFlagBits::eHostCoherent);
-  }
-  [[nodiscard]] VulkanBuffer createStagingBufferDst(vk::DeviceSize size) const {
-    return createBuffer(size, vk::BufferUsageFlagBits::eTransferDst,
-                        vk::MemoryPropertyFlagBits::eHostVisible |
-                            vk::MemoryPropertyFlagBits::eHostCoherent);
-  }
-
-  [[nodiscard]] VulkanBuffer createDeviceBufferSrc(vk::DeviceSize size) const {
-    return createBuffer(size,
-                        vk::BufferUsageFlagBits::eTransferSrc |
-                            vk::BufferUsageFlagBits::eStorageBuffer,
-                        vk::MemoryPropertyFlagBits::eDeviceLocal);
-  }
-
-  [[nodiscard]] VulkanBuffer createDeviceBufferDst(vk::DeviceSize size) const {
-    return createBuffer(size,
-                        vk::BufferUsageFlagBits::eTransferDst |
-                            vk::BufferUsageFlagBits::eStorageBuffer,
-                        vk::MemoryPropertyFlagBits::eDeviceLocal);
-  }
-
-  [[nodiscard]] VulkanImage createImage2D(uint32_t width, uint32_t height,
-                                          vk::Format format,
-                                          vk::ImageUsageFlags usage) const;
-
   // If commandBuffer is provided, use it and only record
   // else allocate a temporary command buffer
   void copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer,
                   vk::DeviceSize size,
                   vk::CommandBuffer commandBuffer = nullptr) const;
-
-  struct CopyBufferT {
-    vk::Buffer src;
-    vk::Buffer dst;
-    vk::DeviceSize size;
-  };
-  void copyBuffers(std::span<CopyBufferT> buffersToCopy) const;
-
-  void copyBufferToImage(vk::Buffer buffer, vk::Image image,
-                         uint32_t imageWidth, uint32_t imageHeight,
-                         vk::CommandBuffer commandBuffer = nullptr) const;
-
-  void copyImageToBuffer(vk::Image image, vk::Buffer buffer, uint32_t width,
-                         uint32_t height,
-                         vk::CommandBuffer commandBuffer) const;
-
-  // Transfer data from a user host buffer to a Vulkan staging buffer
-  template <typename T>
-  void copyToStagingBuffer(std::span<const T> data,
-                           vk::DeviceMemory memory) const {
-    vk::DeviceSize size = data.size() * sizeof(T);
-    // Step 1: Map the memory associated with the staging buffer
-    void *mappedMemory = device.mapMemory(memory, 0, size);
-    // Step 2: Copy data from the vector to the mapped memory
-    memcpy(mappedMemory, data.data(), static_cast<size_t>(size));
-    // Step 3: Unmap the memory so the GPU can access it
-    device.unmapMemory(memory);
-  }
-  template <typename T>
-  void copyToStagingBuffer(std::span<const T> data,
-                           VulkanBuffer &stagingBuffer) const {
-    copyToStagingBuffer(data, stagingBuffer.memory.get());
-  }
-  template <typename T>
-  void copyToStagingBuffer(std::span<const T> data,
-                           VulkanBufferRef &stagingBuffer) const {
-    copyToStagingBuffer(data, stagingBuffer.memory);
-  }
-
-  template <typename T>
-  void copyFromStagingBuffer(vk::DeviceMemory memory, std::span<T> data) const {
-    vk::DeviceSize size = data.size() * sizeof(T);
-    void *mappedMemory = device.mapMemory(memory, 0, size);
-    // Copy the data from GPU memory to a local buffer
-    memcpy(data.data(), mappedMemory, static_cast<size_t>(size));
-    // Unmap the memory after retrieving the data
-    device.unmapMemory(memory);
-  }
-  template <typename T>
-  void copyFromStagingBuffer(const VulkanBuffer &stagingBuffer,
-                             std::span<T> data) const {
-    copyFromStagingBuffer<T>(stagingBuffer.memory.get(), data);
-  }
-  template <typename T>
-  void copyFromStagingBuffer(const VulkanBufferRef &stagingBuffer,
-                             std::span<T> data) const {
-    copyFromStagingBuffer<T>(stagingBuffer.memory, data);
-  }
 
 private:
   // QVulkanInstance vulkanInstance;

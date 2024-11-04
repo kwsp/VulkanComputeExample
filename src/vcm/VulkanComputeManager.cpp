@@ -26,7 +26,7 @@ VulkanComputeManager::VulkanComputeManager() {
   // Step 3: create logical device
   createLogicalDevice();
 
-  // Step 4: create VMA
+  // Step 4: create VMA allocator
   createVmaAllocator();
 
   createCommandPool();
@@ -114,67 +114,6 @@ void VulkanComputeManager::createDescriptorPool() {
   descriptorPool = device.createDescriptorPool(poolInfo);
 }
 
-VulkanBuffer
-VulkanComputeManager::createBuffer(vk::DeviceSize size,
-                                   vk::BufferUsageFlags usage,
-                                   vk::MemoryPropertyFlags properties) const {
-
-  vk::BufferCreateInfo bufferInfo{};
-  bufferInfo.size = size;
-  bufferInfo.usage = usage;
-  bufferInfo.sharingMode = vk::SharingMode::eExclusive;
-
-  auto buffer = device.createBufferUnique(bufferInfo);
-
-  // To allocate memory for a buffer we need to first query its memory
-  // requirements using vkGetBufferMemoryRequirements
-  vk::MemoryRequirements memRequirements =
-      device.getBufferMemoryRequirements(*buffer);
-
-  vk::MemoryAllocateInfo allocInfo{};
-  allocInfo.allocationSize = memRequirements.size;
-  allocInfo.memoryTypeIndex =
-      findMemoryType(memRequirements.memoryTypeBits, properties);
-
-  auto bufferMemory = device.allocateMemoryUnique(allocInfo);
-
-  device.bindBufferMemory(*buffer, *bufferMemory, 0);
-  return {std::move(buffer), std::move(bufferMemory)};
-}
-
-VulkanImage
-VulkanComputeManager::createImage2D(uint32_t width, uint32_t height,
-                                    vk::Format format,
-                                    vk::ImageUsageFlags usage) const {
-  vk::ImageCreateInfo imageInfo{};
-  imageInfo.imageType = vk::ImageType::e2D;
-  imageInfo.extent.width = width;
-  imageInfo.extent.height = height;
-  imageInfo.extent.depth = 1;
-  imageInfo.mipLevels = 1;
-  imageInfo.arrayLayers = 1;
-  imageInfo.format = format;
-  imageInfo.tiling = vk::ImageTiling::eOptimal;
-  imageInfo.initialLayout = vk::ImageLayout::eGeneral;
-  imageInfo.usage = usage;
-  imageInfo.sharingMode = vk::SharingMode::eExclusive;
-  imageInfo.samples = vk::SampleCountFlagBits::e1;
-  auto image = device.createImageUnique(imageInfo);
-
-  // Allocate and bind memory for the image
-  vk::MemoryRequirements imageMemRequirements =
-      device.getImageMemoryRequirements(image.get());
-  vk::MemoryAllocateInfo imageAllocInfo{};
-  imageAllocInfo.allocationSize = imageMemRequirements.size;
-  imageAllocInfo.memoryTypeIndex =
-      findMemoryType(imageMemRequirements.memoryTypeBits,
-                     vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-  auto imageMemory = device.allocateMemoryUnique(imageAllocInfo);
-  device.bindImageMemory(image.get(), imageMemory.get(), 0);
-  return {std::move(image), std::move(imageMemory)};
-}
-
 void VulkanComputeManager::copyBuffer(vk::Buffer srcBuffer,
                                       vk::Buffer dstBuffer, vk::DeviceSize size,
                                       vk::CommandBuffer commandBuffer) const {
@@ -198,45 +137,6 @@ void VulkanComputeManager::copyBuffer(vk::Buffer srcBuffer,
   if (allocTempCommandBuffer) {
     endOneTimeCommandBuffer(commandBuffer);
   }
-}
-
-void VulkanComputeManager::copyBuffers(
-    std::span<CopyBufferT> buffersToCopy) const {
-  // Memory transfer ops are executed using command buffers.
-  // We must first allocate a temporary command buffer.
-  // We can create a short-lived command pool for this because the
-  // implementation may be able to apply memory allocation optimizations.
-  // (should set VK_COMMAND_POOL_CREATE_TRANSIENT_BIT) flag during command
-  // pool creation
-
-  vk::CommandBufferAllocateInfo allocInfo{};
-  allocInfo.level = vk::CommandBufferLevel::ePrimary;
-  allocInfo.commandPool = commandPool;
-  allocInfo.commandBufferCount = 1;
-
-  vk::CommandBuffer commandBuffer = device.allocateCommandBuffers(allocInfo)[0];
-
-  // Immediately start recording the command buffer
-  vk::CommandBufferBeginInfo beginInfo{};
-  beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-
-  commandBuffer.begin(beginInfo);
-
-  for (const auto &buffers : buffersToCopy) {
-    vk::BufferCopy copyRegion{};
-    copyRegion.srcOffset = 0; // Optional
-    copyRegion.dstOffset = 0; // Optional
-    copyRegion.size = buffers.size;
-    commandBuffer.copyBuffer(buffers.src, buffers.dst, copyRegion);
-  }
-
-  vkEndCommandBuffer(commandBuffer);
-
-  vk::SubmitInfo submitInfo{};
-  submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &commandBuffer;
-  queue.submit(submitInfo);
-  queue.waitIdle();
 }
 
 uint32_t
@@ -511,129 +411,6 @@ void VulkanComputeManager::printInstanceExtensionSupport() {
   fmt::print("Available Vulkan extensions:\n");
   for (const auto &extension : extensions) {
     fmt::print("\t{}\n", static_cast<const char *>(extension.extensionName));
-  }
-}
-
-void VulkanComputeManager::copyBufferToImage(
-    vk::Buffer buffer, vk::Image image, uint32_t imageWidth,
-    uint32_t imageHeight, vk::CommandBuffer commandBuffer) const {
-
-  bool useTempCommandBuffer = !commandBuffer;
-  if (useTempCommandBuffer) {
-    commandBuffer = beginTempOneTimeCommandBuffer();
-  }
-
-  // Transition the image to the correct layout before the copy operation
-  vk::ImageMemoryBarrier barrier{};
-  barrier.oldLayout = vk::ImageLayout::eUndefined;
-  barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
-  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  barrier.image = image;
-  barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-  barrier.subresourceRange.baseMipLevel = 0;
-  barrier.subresourceRange.levelCount = 1;
-  barrier.subresourceRange.baseArrayLayer = 0;
-  barrier.subresourceRange.layerCount = 1;
-  barrier.srcAccessMask = vk::AccessFlagBits::eNone;
-  barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-
-  commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                vk::PipelineStageFlagBits::eTransfer,
-                                vk::DependencyFlags(), nullptr, nullptr,
-                                barrier);
-
-  // Copy data from the staging buffer to the image
-  vk::BufferImageCopy copyRegion{};
-  copyRegion.bufferOffset = 0;
-  copyRegion.bufferRowLength = 0;
-  copyRegion.bufferImageHeight = 0;
-  copyRegion.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
-  copyRegion.imageSubresource.mipLevel = 0;
-  copyRegion.imageSubresource.baseArrayLayer = 0;
-  copyRegion.imageSubresource.layerCount = 1;
-  copyRegion.imageOffset = vk::Offset3D{0, 0, 0};
-  copyRegion.imageExtent = vk::Extent3D{imageWidth, imageHeight, 1};
-
-  commandBuffer.copyBufferToImage(
-      buffer, image, vk::ImageLayout::eTransferDstOptimal, copyRegion);
-
-  // Transition the image to the desired layout for shader access
-  barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-  barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-  barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-  barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-
-  commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                vk::PipelineStageFlagBits::eFragmentShader,
-                                vk::DependencyFlags(), nullptr, nullptr,
-                                barrier);
-
-  if (useTempCommandBuffer) {
-    endOneTimeCommandBuffer(commandBuffer);
-  }
-}
-
-void VulkanComputeManager::copyImageToBuffer(
-    vk::Image image, vk::Buffer buffer, uint32_t width, uint32_t height,
-    vk::CommandBuffer commandBuffer) const {
-  bool useTempCommandBuffer = !commandBuffer;
-  if (useTempCommandBuffer) {
-    commandBuffer = beginTempOneTimeCommandBuffer();
-  }
-
-  // Transition the image layout to eTransferSrcOptimal
-  vk::ImageMemoryBarrier barrier{};
-  barrier.oldLayout =
-      vk::ImageLayout::eShaderReadOnlyOptimal; // Assuming the image is in a
-                                               // shader read-only layout
-  barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
-  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  barrier.image = image;
-  barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-  barrier.subresourceRange.baseMipLevel = 0;
-  barrier.subresourceRange.levelCount = 1;
-  barrier.subresourceRange.baseArrayLayer = 0;
-  barrier.subresourceRange.layerCount = 1;
-  barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
-  barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
-
-  commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
-                                vk::PipelineStageFlagBits::eTransfer,
-                                vk::DependencyFlags(), nullptr, nullptr,
-                                barrier);
-
-  // 3. Copy the image to the buffer
-  vk::BufferImageCopy copyRegion{};
-  copyRegion.bufferOffset = 0;
-  copyRegion.bufferRowLength = 0;   // Tightly packed
-  copyRegion.bufferImageHeight = 0; // Tightly packed
-  copyRegion.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
-  copyRegion.imageSubresource.mipLevel = 0;
-  copyRegion.imageSubresource.baseArrayLayer = 0;
-  copyRegion.imageSubresource.layerCount = 1;
-  copyRegion.imageOffset = vk::Offset3D{0, 0, 0};
-  copyRegion.imageExtent = vk::Extent3D{width, height, 1};
-
-  commandBuffer.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal,
-                                  buffer, copyRegion);
-
-  // Transition the image back to its original layout if needed
-  barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
-  barrier.newLayout =
-      vk::ImageLayout::eShaderReadOnlyOptimal; // Or whatever the original
-                                               // layout was
-  barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
-  barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-
-  commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                vk::PipelineStageFlagBits::eComputeShader,
-                                vk::DependencyFlags(), nullptr, nullptr,
-                                barrier);
-
-  if (useTempCommandBuffer) {
-    endOneTimeCommandBuffer(commandBuffer);
   }
 }
 
